@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Compact gstack skill bootstrap.
+# Moves the repeated runtime probe out of every generated SKILL.md.
+
+set +e
+
+_SKILL="${1:-unknown}"
+_MODEL_OVERLAY="${2:-none}"
+_BIN_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd -P)"
+_GSTACK_ROOT="$(cd "$_BIN_DIR/.." 2>/dev/null && pwd -P)"
+
+export GSTACK_ROOT="${GSTACK_ROOT:-$_GSTACK_ROOT}"
+export GSTACK_BIN="${GSTACK_BIN:-$GSTACK_ROOT/bin}"
+export GSTACK_BROWSE="${GSTACK_BROWSE:-$GSTACK_ROOT/browse/dist}"
+export GSTACK_DESIGN="${GSTACK_DESIGN:-$GSTACK_ROOT/design/dist}"
+
+_cfg() {
+  _VALUE=$("$GSTACK_BIN/gstack-config" get "$1" 2>/dev/null)
+  if [ -n "$_VALUE" ]; then
+    printf '%s\n' "$_VALUE"
+  else
+    printf '%s\n' "$2"
+  fi
+}
+
+echo_update() {
+  _UPD=$("$GSTACK_BIN/gstack-update-check" 2>/dev/null || true)
+  [ -n "$_UPD" ] && echo "$_UPD" || true
+}
+
+echo_update
+
+mkdir -p ~/.gstack/sessions ~/.gstack/analytics 2>/dev/null || true
+touch ~/.gstack/sessions/"$PPID" 2>/dev/null || true
+_SESSIONS=$(find ~/.gstack/sessions -mmin -120 -type f 2>/dev/null | wc -l | tr -d ' ')
+find ~/.gstack/sessions -mmin +120 -type f -exec rm {} + 2>/dev/null || true
+
+_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+_TEL_START=$(date +%s)
+_SESSION_ID="$$-$_TEL_START"
+touch ~/.gstack/analytics/.pending-"$_SESSION_ID" 2>/dev/null || true
+_PROACTIVE=$(_cfg proactive true)
+_PROACTIVE_PROMPTED=$([ -f ~/.gstack/.proactive-prompted ] && echo yes || echo no)
+_SKILL_PREFIX=$(_cfg skill_prefix false)
+_LAKE_SEEN=$([ -f ~/.gstack/.completeness-intro-seen ] && echo yes || echo no)
+_TEL=$(_cfg telemetry off)
+_TEL_PROMPTED=$([ -f ~/.gstack/.telemetry-prompted ] && echo yes || echo no)
+_EXPLAIN_LEVEL=$(_cfg explain_level default)
+[ "$_EXPLAIN_LEVEL" = default ] || [ "$_EXPLAIN_LEVEL" = terse ] || _EXPLAIN_LEVEL=default
+_QUESTION_TUNING=$(_cfg question_tuning false)
+_CHECKPOINT_MODE=$(_cfg checkpoint_mode explicit)
+_CHECKPOINT_PUSH=$(_cfg checkpoint_push false)
+_ROUTING_DECLINED=$(_cfg routing_declined false)
+
+source <("$GSTACK_BIN/gstack-repo-mode" 2>/dev/null) 2>/dev/null || true
+REPO_MODE=${REPO_MODE:-unknown}
+
+_HAS_ROUTING=no
+if [ -f CLAUDE.md ] && grep -q "## Skill routing" CLAUDE.md 2>/dev/null; then
+  _HAS_ROUTING=yes
+fi
+
+_VENDORED=no
+if [ -d ".claude/skills/gstack" ] && [ ! -L ".claude/skills/gstack" ]; then
+  if [ -f ".claude/skills/gstack/VERSION" ] || [ -d ".claude/skills/gstack/.git" ]; then
+    _VENDORED=yes
+  fi
+fi
+
+eval "$("$GSTACK_BIN/gstack-slug" 2>/dev/null)" 2>/dev/null || true
+_LEARN_FILE="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}/learnings.jsonl"
+if [ -f "$_LEARN_FILE" ]; then
+  _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
+else
+  _LEARN_COUNT=0
+fi
+
+# Local-only analytics/session markers. Remote telemetry still obeys config.
+if [ "$_TEL" != off ]; then
+  echo '{"skill":"'"$_SKILL"'","ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","repo":"'"$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo unknown)"'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+fi
+"$GSTACK_BIN/gstack-timeline-log" '{"skill":"'"$_SKILL"'","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+
+printf 'BRANCH: %s\n' "$_BRANCH"
+printf 'SESSIONS: %s\n' "${_SESSIONS:-0}"
+printf 'PROACTIVE: %s\n' "$_PROACTIVE"
+printf 'PROACTIVE_PROMPTED: %s\n' "$_PROACTIVE_PROMPTED"
+printf 'SKILL_PREFIX: %s\n' "$_SKILL_PREFIX"
+printf 'REPO_MODE: %s\n' "$REPO_MODE"
+printf 'LAKE_INTRO: %s\n' "$_LAKE_SEEN"
+printf 'TELEMETRY: %s\n' "${_TEL:-off}"
+printf 'TEL_PROMPTED: %s\n' "$_TEL_PROMPTED"
+printf 'EXPLAIN_LEVEL: %s\n' "$_EXPLAIN_LEVEL"
+printf 'QUESTION_TUNING: %s\n' "$_QUESTION_TUNING"
+printf 'LEARNINGS: %s\n' "${_LEARN_COUNT:-0}"
+printf 'HAS_ROUTING: %s\n' "$_HAS_ROUTING"
+printf 'ROUTING_DECLINED: %s\n' "$_ROUTING_DECLINED"
+printf 'VENDORED_GSTACK: %s\n' "$_VENDORED"
+printf 'MODEL_OVERLAY: %s\n' "$_MODEL_OVERLAY"
+printf 'CHECKPOINT_MODE: %s\n' "$_CHECKPOINT_MODE"
+printf 'CHECKPOINT_PUSH: %s\n' "$_CHECKPOINT_PUSH"
+[ -n "$OPENCLAW_SESSION" ] && printf 'SPAWNED_SESSION: true\n'
+
+if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
+  "$GSTACK_BIN/gstack-learnings-search" --limit 3 2>/dev/null || true
+fi
+
+if [ "$_MODEL_OVERLAY" = gbrain ] || [ "$_MODEL_OVERLAY" = hermes ]; then
+  if command -v gbrain >/dev/null 2>&1; then
+    _BRAIN_JSON=$(gbrain doctor --fast --json 2>/dev/null || echo '{}')
+    _BRAIN_SCORE=$(echo "$_BRAIN_JSON" | grep -o '"health_score":[0-9]*' | cut -d: -f2)
+    _BRAIN_FAILS=$(echo "$_BRAIN_JSON" | grep -o '"status":"fail"' | wc -l | tr -d ' ')
+    _BRAIN_WARNS=$(echo "$_BRAIN_JSON" | grep -o '"status":"warn"' | wc -l | tr -d ' ')
+    printf 'BRAIN_HEALTH: %s (%s failures, %s warnings)\n' "${_BRAIN_SCORE:-unknown}" "${_BRAIN_FAILS:-0}" "${_BRAIN_WARNS:-0}"
+  fi
+fi

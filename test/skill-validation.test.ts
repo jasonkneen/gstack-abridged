@@ -246,13 +246,11 @@ describe('Update check preamble', () => {
   ];
 
   for (const skill of skillsWithUpdateCheck) {
-    test(`${skill} update check line ends with || true`, () => {
+    test(`${skill} delegates update checking to compact gstack-init bootstrap`, () => {
       const content = fs.readFileSync(path.join(ROOT, skill), 'utf-8');
-      // The second line of the bash block must end with || true
-      // to avoid exit code 1 when _UPD is empty (up to date)
-      const match = content.match(/\[ -n "\$_UPD" \].*$/m);
-      expect(match).not.toBeNull();
-      expect(match![0]).toContain('|| true');
+      expect(content).toContain('/gstack-init');
+      expect(content).toContain('gstack-init');
+      expect(content).not.toContain('_UPD=$(');
     });
   }
 
@@ -263,17 +261,21 @@ describe('Update check preamble', () => {
     }
   });
 
-  test('update check bash block exits 0 when up to date', () => {
-    // Simulate the exact preamble command from SKILL.md
+  test('compact bootstrap update check exits 0 when up to date', () => {
+    const init = fs.readFileSync(path.join(ROOT, 'bin', 'gstack-init'), 'utf-8');
+    expect(init).toContain('echo_update()');
+    expect(init).toContain('_UPD=$("$GSTACK_BIN/gstack-update-check" 2>/dev/null || true)');
+    expect(init).toContain('[ -n "$_UPD" ] && echo "$_UPD" || true');
+
     const result = Bun.spawnSync(['bash', '-c',
-      '_UPD=$(echo "" || true); [ -n "$_UPD" ] && echo "$_UPD" || true'
+      '_UPD=""; [ -n "$_UPD" ] && echo "$_UPD" || true'
     ], { stdout: 'pipe', stderr: 'pipe' });
     expect(result.exitCode).toBe(0);
   });
 
-  test('update check bash block exits 0 when upgrade available', () => {
+  test('compact bootstrap update check prints upgrade output when available', () => {
     const result = Bun.spawnSync(['bash', '-c',
-      '_UPD=$(echo "UPGRADE_AVAILABLE 0.3.3 0.4.0" || true); [ -n "$_UPD" ] && echo "$_UPD" || true'
+      '_UPD="UPGRADE_AVAILABLE 0.3.3 0.4.0"; [ -n "$_UPD" ] && echo "$_UPD" || true'
     ], { stdout: 'pipe', stderr: 'pipe' });
     expect(result.exitCode).toBe(0);
     expect(result.stdout.toString().trim()).toBe('UPGRADE_AVAILABLE 0.3.3 0.4.0');
@@ -809,7 +811,8 @@ describe('Completeness Principle in generated SKILL.md files', () => {
     'design-review/SKILL.md',
     'design-consultation/SKILL.md',
     'document-release/SKILL.md',
-    'cso/SKILL.md',  ];
+    'cso/SKILL.md',
+  ];
 
   for (const skill of skillsWithPreamble) {
     test(`${skill} contains Completeness Principle section`, () => {
@@ -1666,14 +1669,15 @@ describe('Codex skill validation', () => {
 // --- Repo mode and test failure triage validation ---
 
 describe('Repo mode preamble validation', () => {
-  test('generated SKILL.md preamble contains REPO_MODE output', () => {
+  test('generated SKILL.md preamble delegates repo-mode probing to compact bootstrap', () => {
     const content = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf-8');
+    const init = fs.readFileSync(path.join(ROOT, 'bin', 'gstack-init'), 'utf-8');
     expect(content).toContain('REPO_MODE:');
-    expect(content).toContain('gstack-repo-mode');
+    expect(content).toContain('gstack-init');
+    expect(init).toContain('gstack-repo-mode');
   });
 
-  test('tier 3+ skills contain See Something Say Something section', () => {
-    // Root SKILL.md is tier 1 (no Repo Mode). Check a tier 3 skill instead.
+  test('tier 3+ skills contain compact See Something Say Something guidance', () => {
     const content = fs.readFileSync(path.join(ROOT, 'plan-ceo-review', 'SKILL.md'), 'utf-8');
     expect(content).toContain('See Something, Say Something');
     expect(content).toContain('REPO_MODE');

@@ -55,12 +55,15 @@ interface FixtureComponents {
 }
 
 interface FixtureCase {
-  content: string;
+  case_id: number;
+  content_sha256: string;
+  content_len: number;
   label: 'yes' | 'no';
   // Full LayerSignal captured from the live bench (testsavant, deberta if
   // enabled, transcript with meta.verdict). This is what we replay through
   // combineVerdict — not just the Haiku response — so the fixture exercises
-  // the full ensemble path.
+  // the full ensemble path. Full page content is intentionally omitted from
+  // the committed fixture to avoid multi-megabyte/token-heavy repo bloat.
   signals: LayerSignal[];
 }
 
@@ -148,6 +151,14 @@ describe('BrowseSafe-Bench ensemble gate (fixture replay)', () => {
     if (fixtureState === 'present-match') {
       expect(fixture).not.toBeNull();
       expect(fixture!.cases.length).toBeGreaterThanOrEqual(100);
+      for (const [idx, row] of fixture!.cases.entries()) {
+        expect(row.case_id).toBe(idx);
+        expect(row.content_sha256).toMatch(/^[a-f0-9]{64}$/);
+        expect(row.content_len).toBeGreaterThan(0);
+        expect((row as Record<string, unknown>).content).toBeUndefined();
+      }
+      const fixtureBytes = fs.statSync(FIXTURE_PATH).size;
+      expect(fixtureBytes).toBeLessThan(1_000_000);
       return;
     }
 

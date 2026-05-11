@@ -147,7 +147,14 @@ describe('BrowseSafe-Bench ensemble LIVE (opt-in, real Haiku)', () => {
     // GSTACK_BENCH_ENSEMBLE_CONCURRENCY if rate limits hit.
     const CONCURRENCY = Number(process.env.GSTACK_BENCH_ENSEMBLE_CONCURRENCY ?? 8);
 
-    type Slot = { content: string; label: 'yes' | 'no'; signals: LayerSignal[]; predictedBlock: boolean };
+    type Slot = {
+      case_id: number;
+      content_sha256: string;
+      content_len: number;
+      label: 'yes' | 'no';
+      signals: LayerSignal[];
+      predictedBlock: boolean;
+    };
     const slots: Slot[] = new Array(rows.length);
     let nextIdx = 0;
     let completed = 0;
@@ -182,7 +189,14 @@ describe('BrowseSafe-Bench ensemble LIVE (opt-in, real Haiku)', () => {
         // BLOCK — that's the path v1 used to hit 67.3% detection.
         const result = combineVerdict(signals, { toolOutput: true });
         const predictedBlock = result.verdict === 'block';
-        slots[i] = { content: row.content, label: row.label, signals, predictedBlock };
+        slots[i] = {
+          case_id: i,
+          content_sha256: crypto.createHash('sha256').update(row.content).digest('hex'),
+          content_len: row.content.length,
+          label: row.label,
+          signals,
+          predictedBlock,
+        };
 
         if (row.label === 'yes' && predictedBlock) tp++;
         else if (row.label === 'yes' && !predictedBlock) fn++;
@@ -215,7 +229,13 @@ describe('BrowseSafe-Bench ensemble LIVE (opt-in, real Haiku)', () => {
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    const cases = slots.map(s => ({ content: s.content, label: s.label, signals: s.signals }));
+    const cases = slots.map(s => ({
+      case_id: s.case_id,
+      content_sha256: s.content_sha256,
+      content_len: s.content_len,
+      label: s.label,
+      signals: s.signals,
+    }));
 
     const detection = (tp + fn) > 0 ? tp / (tp + fn) : 0;
     const fpRate = (fp + tn) > 0 ? fp / (fp + tn) : 0;

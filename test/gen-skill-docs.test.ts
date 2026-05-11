@@ -89,6 +89,25 @@ const CLAUDE_SKIPPED_SKILL_DIRS = new Set(['claude']);
 const CLAUDE_GENERATED_SKILLS = ALL_SKILLS.filter(skill => !CLAUDE_SKIPPED_SKILL_DIRS.has(skill.dir));
 
 describe('gen-skill-docs', () => {
+  test('generated ship skill uses compact runtime bootstrap instead of expanded doctrine preamble', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
+    const preamble = content.match(/## Preamble \(run first\)[\s\S]*?(?=\n## )/);
+    expect(preamble).not.toBeNull();
+    expect(preamble![0]).toContain('gstack-init ship');
+    expect(preamble![0]).toContain('BRANCH:');
+    expect(preamble![0]).toContain('CHECKPOINT_MODE:');
+    expect(preamble![0].length).toBeLessThan(5_000);
+  });
+
+  test('committed generated skills keep full doctrine out of per-skill preambles', () => {
+    const checked = ['ship/SKILL.md', 'qa/SKILL.md', 'context-restore/SKILL.md'];
+    for (const rel of checked) {
+      const content = fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+      expect(content).toContain('gstack-init');
+      expect(content).not.toContain('What I noticed about how you think');
+    }
+  });
+
   test('generated SKILL.md contains all command categories', () => {
     const content = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf-8');
     const categories = new Set(Object.values(COMMAND_DESCRIPTIONS).map(d => d.category));
@@ -410,35 +429,31 @@ describe('gen-skill-docs', () => {
     }
   });
 
-  test('qa and qa-only templates use QA_METHODOLOGY placeholder', () => {
+  test('qa owns QA_METHODOLOGY; qa-only is a compact report-only alias', () => {
     const qaTmpl = fs.readFileSync(path.join(ROOT, 'qa', 'SKILL.md.tmpl'), 'utf-8');
     expect(qaTmpl).toContain('{{QA_METHODOLOGY}}');
 
     const qaOnlyTmpl = fs.readFileSync(path.join(ROOT, 'qa-only', 'SKILL.md.tmpl'), 'utf-8');
-    expect(qaOnlyTmpl).toContain('{{QA_METHODOLOGY}}');
+    expect(qaOnlyTmpl).not.toContain('{{QA_METHODOLOGY}}');
+    expect(qaOnlyTmpl).toContain('report-only mode');
+    expect(qaOnlyTmpl).toContain('/qa --report-only');
   });
 
-  test('QA_METHODOLOGY appears expanded in both qa and qa-only generated files', () => {
+  test('qa-only generated file is compact and delegates the shared QA workflow', () => {
     const qaContent = fs.readFileSync(path.join(ROOT, 'qa', 'SKILL.md'), 'utf-8');
     const qaOnlyContent = fs.readFileSync(path.join(ROOT, 'qa-only', 'SKILL.md'), 'utf-8');
 
-    // Both should contain the health score rubric
     expect(qaContent).toContain('Health Score Rubric');
-    expect(qaOnlyContent).toContain('Health Score Rubric');
-
-    // Both should contain framework guidance
     expect(qaContent).toContain('Framework-Specific Guidance');
-    expect(qaOnlyContent).toContain('Framework-Specific Guidance');
-
-    // Both should contain the important rules
     expect(qaContent).toContain('Important Rules');
-    expect(qaOnlyContent).toContain('Important Rules');
-
-    // Both should contain the 6 phases
-    expect(qaContent).toContain('Phase 1');
-    expect(qaOnlyContent).toContain('Phase 1');
     expect(qaContent).toContain('Phase 6');
-    expect(qaOnlyContent).toContain('Phase 6');
+
+    expect(qaOnlyContent).toContain('/qa --report-only');
+    expect(qaOnlyContent).toContain('report-only mode');
+    expect(qaOnlyContent).toContain('Phases 1-6');
+    expect(qaOnlyContent).not.toContain('Framework-Specific Guidance');
+    expect(qaOnlyContent).not.toContain('{{QA_METHODOLOGY}}');
+    expect(qaOnlyContent.split('\n').length).toBeLessThan(400);
   });
 
   test('qa-only has no-fix guardrails', () => {

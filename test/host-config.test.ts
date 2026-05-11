@@ -6,6 +6,7 @@
 import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { validateHostConfig, validateAllConfigs, type HostConfig } from '../scripts/host-config';
 import {
   ALL_HOST_CONFIGS,
@@ -389,25 +390,34 @@ describe('host-config-export.ts CLI', () => {
 
 // ─── Golden-file regression ─────────────────────────────────
 
+type GoldenManifestEntry = {
+  path: string;
+  sha256: string;
+  bytes: number;
+  contains: string[];
+};
+
 describe('golden-file regression', () => {
-  const GOLDEN_DIR = path.join(ROOT, 'test', 'fixtures', 'golden');
+  const GOLDEN_MANIFEST = path.join(ROOT, 'test', 'fixtures', 'golden', 'ship-skill-manifest.json');
 
-  test('Claude ship skill matches golden baseline', () => {
-    const golden = fs.readFileSync(path.join(GOLDEN_DIR, 'claude-ship-SKILL.md'), 'utf-8');
-    const current = fs.readFileSync(path.join(ROOT, 'ship', 'SKILL.md'), 'utf-8');
-    expect(current).toBe(golden);
-  });
+  function sha256(content: string): string {
+    return crypto.createHash('sha256').update(content).digest('hex');
+  }
 
-  test('Codex ship skill matches golden baseline', () => {
-    const golden = fs.readFileSync(path.join(GOLDEN_DIR, 'codex-ship-SKILL.md'), 'utf-8');
-    const current = fs.readFileSync(path.join(ROOT, '.agents', 'skills', 'gstack-ship', 'SKILL.md'), 'utf-8');
-    expect(current).toBe(golden);
-  });
+  test('ship skill outputs match compact golden manifest', () => {
+    const manifest = JSON.parse(fs.readFileSync(GOLDEN_MANIFEST, 'utf-8')) as Record<string, GoldenManifestEntry>;
+    expect(Object.keys(manifest).sort()).toEqual(['claude', 'codex', 'factory']);
 
-  test('Factory ship skill matches golden baseline', () => {
-    const golden = fs.readFileSync(path.join(GOLDEN_DIR, 'factory-ship-SKILL.md'), 'utf-8');
-    const current = fs.readFileSync(path.join(ROOT, '.factory', 'skills', 'gstack-ship', 'SKILL.md'), 'utf-8');
-    expect(current).toBe(golden);
+    for (const [host, entry] of Object.entries(manifest)) {
+      const current = fs.readFileSync(path.join(ROOT, entry.path), 'utf-8');
+      expect(Buffer.byteLength(current, 'utf8')).toBe(entry.bytes);
+      expect(sha256(current)).toBe(entry.sha256);
+      for (const snippet of entry.contains) {
+        expect(current).toContain(snippet);
+      }
+      // Guard against reintroducing full generated skill snapshots as goldens.
+      expect(fs.existsSync(path.join(ROOT, 'test', 'fixtures', 'golden', `${host}-ship-SKILL.md`))).toBe(false);
+    }
   });
 });
 

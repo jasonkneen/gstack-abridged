@@ -1,0 +1,38 @@
+{
+  "claude": {
+    "bytes": 120323,
+    "contains": [
+      "name: ship",
+      "allowed-tools:",
+      "## Preamble (run first)",
+      "## Step 6: Eval Suites (conditional)",
+      "## Step 7: Test Coverage Audit"
+    ],
+    "path": "ship/SKILL.md",
+    "sha256": "9ab5d227a9f0d3014877fcff38166b3914dd8bece9f4e63d30f83bf9120213f7"
+  },
+  "codex": {
+    "bytes": 100231,
+    "contains": [
+      "name: ship",
+      "GSTACK_ROOT=\"$HOME/.codex/skills/gstack\"",
+      "## Preamble (run first)",
+      "## Step 6: Eval Suites (conditional)",
+      "## Step 7: Test Coverage Audit"
+    ],
+    "path": ".agents/skills/gstack-ship/SKILL.md",
+    "sha256": "f95e1a68334a2c3216ee8e70362cce6cc5d157798414a2c1b674e4ccaa77135e"
+  },
+  "factory": {
+    "bytes": 120086,
+    "contains": [
+      "name: ship",
+      "user-invocable: true",
+      "disable-model-invocation: true",
+      "GSTACK_ROOT=\"$HOME/.factory/skills/gstack\"",
+      "## Step 7: Test Coverage Audit"
+    ],
+    "path": ".factory/skills/gstack-ship/SKILL.md",
+    "sha256": "8e71bbc16d99b4ad5640b485a50e6442fa54adfeb0725ea122682ad24ee1088f"
+  }
+}

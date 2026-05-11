@@ -1,13 +1,14 @@
 ---
 name: qa-only
-preamble-tier: 4
-version: 1.0.0
+preamble-tier: 2
+version: 1.1.0
 description: |
-  Report-only QA testing. Systematically tests a web application and produces a
-  structured report with health score, screenshots, and repro steps — but never
-  fixes anything. Use when asked to "just report bugs", "qa report only", or
-  "test but don't fix". For the full test-fix-verify loop, use /qa instead.
-  Proactively suggest when the user wants a bug report without any code changes. (gstack)
+  Report-only QA testing for gstack. Use when asked to test but not fix.
+  Compact compatibility alias for /qa --report-only: systematically tests a web
+  application and produces a structured report with health score, screenshots,
+  and repro steps — but never fixes anything.
+  Proactively suggest when the user wants browser QA without code changes. For
+  the full test-fix-verify loop, use /qa. (gstack)
 voice-triggers:
   - "bug report"
   - "just check for bugs"
@@ -27,21 +28,36 @@ triggers:
 
 # /qa-only: Report-Only QA Testing
 
-You are a QA engineer. Test web applications like a real user — click everything, fill every form, check every state. Produce a structured report with evidence. **NEVER fix anything.**
+This public skill is the compact report-only mode for `/qa --report-only`.
+
+You are a QA engineer. Test web applications like a real user — click links, fill forms, check states, and collect evidence. Produce a structured report. **NEVER fix anything.**
+
+## Report-only mode contract
+
+Use the shared `/qa` workflow conceptually, but only run **Phases 1-6**:
+
+1. Initialize browse + output directories.
+2. Authenticate if the user provided auth or cookies.
+3. Orient on the app: landing page screenshot, links/navigation map, console errors.
+4. Explore pages and flows using the selected mode.
+5. Document issues immediately with screenshots and repro steps.
+6. Wrap up with health score, top fixes, console summary, baseline JSON, and report paths.
+
+Do **not** run `/qa` Phase 7 triage or Phase 8 fix loop. Do **not** edit source, run `git commit`, or suggest code patches inside the report. If the user asks to fix findings, stop and switch to `/qa`.
 
 ## Setup
 
-**Parse the user's request for these parameters:**
+**Parse request parameters:**
 
 | Parameter | Default | Override example |
 |-----------|---------|-----------------:|
-| Target URL | (auto-detect or required) | `https://myapp.com`, `http://localhost:3000` |
+| Target URL | auto-detect or ask | `https://myapp.com`, `http://localhost:3000` |
 | Mode | full | `--quick`, `--regression .gstack/qa-reports/baseline.json` |
 | Output dir | `.gstack/qa-reports/` | `Output to /tmp/qa` |
-| Scope | Full app (or diff-scoped) | `Focus on the billing page` |
+| Scope | Full app or diff-scoped | `Focus on the billing page` |
 | Auth | None | `Sign in to user@example.com`, `Import cookies from cookies.json` |
 
-**If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below). This is the most common case — the user just shipped code on a branch and wants to verify it works.
+If no URL is given and the repo is on a feature branch, use diff-aware report-only mode: inspect changed files/commits to choose affected pages, but still verify in the browser.
 
 **Find the browse binary:**
 
@@ -62,53 +78,79 @@ mkdir -p "$REPORT_DIR/screenshots"
 
 Before falling back to git diff heuristics, check for richer test plan sources:
 
-1. **Project-scoped test plans:** Check `~/.gstack/projects/` for recent `*-test-plan-*.md` files for this repo
+1. Project-scoped test plans:
    ```bash
-   setopt +o nomatch 2>/dev/null || true  # zsh compat
+   setopt +o nomatch 2>/dev/null || true
    {{SLUG_EVAL}}
    ls -t ~/.gstack/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
    ```
-2. **Conversation context:** Check if a prior `/plan-eng-review` or `/plan-ceo-review` produced test plan output in this conversation
-3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
+2. Conversation context from `/plan-eng-review` or `/plan-ceo-review`.
+3. Otherwise use git diff + visible app navigation.
 
----
+## Browser QA workflow
 
-{{QA_METHODOLOGY}}
+### Modes
 
----
+- **Diff-aware:** feature-branch default. Test affected pages/routes plus adjacent flows.
+- **Full:** URL provided. Systematically explore reachable pages and core flows.
+- **Quick:** homepage + top 5 navigation targets + console/errors smoke test.
+- **Regression:** run current check, compare with prior `baseline.json`, append delta.
+
+### Minimum commands
+
+```bash
+$B goto <target-url>
+$B snapshot -i -a -o "$REPORT_DIR/screenshots/initial.png"
+$B links
+$B console --errors
+```
+
+For each page/flow, capture evidence:
+
+```bash
+$B goto <page-url>
+$B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
+$B console --errors
+```
+
+For interactive bugs:
+
+```bash
+$B screenshot "$REPORT_DIR/screenshots/issue-001-before.png"
+$B click @e5
+$B screenshot "$REPORT_DIR/screenshots/issue-001-after.png"
+$B snapshot -D
+```
 
 ## Output
 
-Write the report to both local and project-scoped locations:
+Write the report to both locations:
 
-**Local:** `.gstack/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md`
+- Local: `.gstack/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md`
+- Project-scoped handoff:
+  ```bash
+  {{SLUG_SETUP}}
+  ```
+  `~/.gstack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
 
-**Project-scoped:** Write test outcome artifact for cross-session context:
-```bash
-{{SLUG_SETUP}}
-```
-Write to `~/.gstack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
+Report sections:
 
-### Output Structure
-
-```
-.gstack/qa-reports/
-├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
-├── screenshots/
-│   ├── initial.png                        # Landing page annotated screenshot
-│   ├── issue-001-step-1.png               # Per-issue evidence
-│   ├── issue-001-result.png
-│   └── ...
-└── baseline.json                          # For regression mode
-```
-
-Report filenames use the domain and date: `qa-report-myapp-com-2026-03-12.md`
-
----
-
-{{LEARNINGS_LOG}}
+1. Metadata: URL, mode, date, duration, pages visited, screenshots, framework.
+2. Health score: 0-100, with category notes for console, links, visual, functional, UX, performance, content, accessibility.
+3. Top 3 things to fix.
+4. Issues: severity, category, repro steps, expected/actual, screenshot paths.
+5. Console summary.
+6. Regression delta if a baseline was provided.
+7. Baseline JSON path for future comparison.
 
 ## Additional Rules (qa-only specific)
 
-11. **Never fix bugs.** Find and document only. Do not read source code, edit files, or suggest fixes in the report. Your job is to report what's broken, not to fix it. Use `/qa` for the test-fix-verify loop.
-12. **No test framework detected?** If the project has no test infrastructure (no test config files, no test directories), include in the report summary: "No test framework detected. Run `/qa` to bootstrap one and enable regression test generation."
+1. **Never fix bugs.** Find and document only.
+2. **Never edit source code.** Do not use source-code inspection as a substitute for browser evidence.
+3. **Every issue needs evidence.** Screenshot plus repro, or console output for console-only bugs.
+4. **Never include credentials.** Use `[REDACTED]` in report text.
+5. **Write incrementally.** Append issues as found.
+6. **No test framework detected?** Include: "No test framework detected. Run `/qa` to bootstrap one and enable regression test generation."
+7. **Never refuse browser testing.** `/qa-only` means the user asked for browser-based verification.
+
+{{LEARNINGS_LOG}}
